@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "API Checker",
+  "version": "1.0",
+  "permissions": [
+    "webRequest",
+    "cookies",
+    "tabs",
+    "storage",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "devtools_page": "devtools.html"
+}
