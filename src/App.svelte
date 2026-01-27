@@ -1,26 +1,29 @@
 <script lang="ts">
-  // --- 状態管理 (Svelte 5 Runes) ---
-  let apis = $state([]);
-  let selected = $state(null);
-  let cookieString = $state("");
+  import JSONTree from 'svelte-json-tree'; // 追加
+  
+  // --- 1. 状態管理 ($state) ---
+  // $state を使うことで、変数の値が変わると画面が自動更新されます
+  let apis = $state([]);         // 通信リストの配列
+  let selected = $state(null);   // 現在選択中の通信データ
+  let cookieString = $state(""); // 表示用のクッキー文字列
 
-  // --- 通信の監視 ---
+  // --- 2. Chrome API による通信監視 ---
   if (typeof chrome !== 'undefined' && chrome.devtools) {
+    // ネットワークリクエストが完了したときに発火
     chrome.devtools.network.onRequestFinished.addListener((request) => {
       const currentUrl = request.request.url;
       const mimeType = request.response.content.mimeType || "";
 
-      // 1. ノイズ（フォント、画像、スタイルシートなど）を完全に除外
+      // 【フィルタリング】特定の拡張子を持つ静的ファイルを除外
       const ignoreExtensions = [".woff2", ".woff", ".ttf", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".js"];
       if (ignoreExtensions.some(ext => currentUrl.toLowerCase().split('?')[0].endsWith(ext))) return;
 
-      // 2. レスポンスがJSONである、またはURLに 'api' が含まれる通信のみに限定
-      // ※ バックエンドの通信は通常 application/json です
+      // 【API判定】JSONデータ または 特定のURLパターンのみに絞り込む
       const isJson = mimeType.includes('json');
       const isApiCall = currentUrl.includes('/api/') || currentUrl.includes('handler='); 
-
       if (!isJson && !isApiCall) return;
 
+      // 表示用のデータオブジェクトを作成
       const newEntry = {
         id: crypto.randomUUID(),
         url: currentUrl,
@@ -32,29 +35,50 @@
         body: null 
       };
 
-      // ... (以下、requestBodyのパースやgetContentの処理はそのまま)
-
-      // リクエストBodyがJSONならパース
+      // リクエストBodyがJSONならオブジェクトに変換
       if (newEntry.requestBody) {
-        try {
-          newEntry.requestBody = JSON.parse(newEntry.requestBody);
-        } catch (e) { /* そのままテキスト */ }
+        try { newEntry.requestBody = JSON.parse(newEntry.requestBody); } catch (e) {}
       }
 
       // レスポンスBodyを取得
       request.getContent((content) => {
-        if (content) {
-          if (newEntry.mimeType.includes('json')) {
-            try { newEntry.body = JSON.parse(content); } catch { newEntry.body = content; }
-          } else { newEntry.body = content; }
+        if (!content) return;
+
+        let finalData = content;
+        
+        try {
+          // 1回目のパース
+          finalData = JSON.parse(content);
+          
+          // 【ここが重要】もしパース結果がまだ「文字列」で、かつJSONっぽいなら、もう一度パースする
+          if (typeof finalData === 'string') {
+            const trimmed = finalData.trim();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+              finalData = JSON.parse(trimmed);
+            }
+          }
+        } catch (e) {
+          // パース失敗時は元のコンテンツのまま
+          finalData = content;
+        }
+
+        // 状態を更新
+        apis = apis.map(api => 
+          api.id === newEntry.id ? { ...api, body: finalData } : api
+        );
+        if (selected && selected.id === newEntry.id) {
+          selected = { ...selected, body: finalData };
         }
       });
 
+      // 【状態更新】配列の先頭に追加。Svelteがこれを検知してリストを再描画
       apis = [newEntry, ...apis];
-      if (apis.length > 100) apis = apis.slice(0, 100);
+      if (apis.length > 100) apis = apis.slice(0, 100); // 100件制限
     });
   }
 
+  // --- 3. 補助関数 ---
+  // URLからファイル名やエンドポイント名を抽出
   function getApiName(url) {
     try {
       const urlObj = new URL(url);
@@ -63,6 +87,7 @@
     } catch { return url; }
   }
 
+  // 詳細画面を表示し、そのURLに関連するクッキーを取得
   function showDetail(api) {
     selected = api;
     chrome.cookies.getAll({ url: api.url }, (cookies) => {
@@ -83,12 +108,7 @@
   <main class="content">
     {#if !selected}
       <div class="list-container">
-        <div class="list-head">
-          <div class="col-method">METHOD</div>
-          <div class="col-main">NAME / URL</div>
-          <div class="col-status">STATUS</div>
-        </div>
-        
+        <div class="list-head">...</div>
         <div class="list-body">
           {#each apis as api (api.id)}
             <button class="row" onclick={() => showDetail(api)}>
@@ -121,24 +141,23 @@
             <div class="url-display">{selected.url}</div>
           </section>
 
-          {#if selected.method !== 'GET'}
-          <section>
-            <div class="label" style="color: #2196f3; border-left-color: #2196f3;">REQUEST BODY</div>
-            <div class="code-container">
-              {#if selected.requestBody}
-                <pre><code style="color: #61afef;">{typeof selected.requestBody === 'object' ? JSON.stringify(selected.requestBody, null, 2) : selected.requestBody}</code></pre>
-              {:else}
-                <div class="no-data">No request payload.</div>
-              {/if}
-            </div>
-          </section>
-          {/if}
-
           <section>
             <div class="label" style="color: #4caf50; border-left-color: #4caf50;">RESPONSE BODY</div>
-            <div class="code-container">
+            <div class="code-container tree-mode">
               {#if selected.body}
-                <pre><code style="color: #dcdcaa;">{typeof selected.body === 'object' ? JSON.stringify(selected.body, null, 2) : selected.body}</code></pre>
+                {@const displayData = (typeof selected.body === 'string' && (selected.body.trim().startsWith('{') || selected.body.trim().startsWith('['))) 
+                  ? JSON.parse(selected.body) 
+                  : selected.body}
+
+                <span style="font-size: 10px; color: #444; margin-bottom: 5px; display: block;">
+                  Detected Type: {Array.isArray(displayData) ? 'Array' : typeof displayData}
+                </span>
+
+                {#if typeof displayData === 'object' && displayData !== null}
+                  <JSONTree value={displayData} defaultExpandedLevel={1} />
+                {:else}
+                  <pre><code style="color: #dcdcaa;">{displayData}</code></pre>
+                {/if}
               {:else}
                 <div class="no-data">Loading or no response data...</div>
               {/if}
@@ -149,11 +168,11 @@
             <div class="label">COOKIES</div>
             <div class="cookie-list">
               {#if cookieString}
-                {#each cookieString.split(';') as cookie}
-                  <div class="cookie-item">{cookie.trim()}</div>
+                {#each cookieString.split('; ') as cookie}
+                  <div class="cookie-item">{cookie}</div>
                 {/each}
               {:else}
-                <div class="no-data">No cookies found.</div>
+                <div class="no-data">No cookies found for this domain.</div>
               {/if}
             </div>
           </section>
@@ -212,4 +231,31 @@
   .cookie-list { display: flex; flex-direction: column; gap: 5px; }
   .cookie-item { background: #111; padding: 6px 10px; border-radius: 3px; font-size: 11px; color: #ccc; border: 1px solid #222; word-break: break-all; }
   .empty-msg, .no-data { padding: 40px; text-align: left; color: #444; font-size: 12px; }
+  /* JSONツリーをモノトーン基調に設定 */
+  .code-container.tree-mode {
+    background: #0a0a0a;
+    padding: 12px;
+    border: 1px solid #222;
+    border-radius: 4px;
+    
+    --json-tree-font-family: 'Consolas', monospace;
+    --json-tree-font-size: 13px;
+    --json-tree-bg: transparent;
+
+    /* --- 配色のカスタマイズ（モノトーン＋α） --- */
+    --json-tree-label-color: #666666;      /* 矢印や記号（控えめなグレー） */
+    --json-tree-property-color: #ffffff;   /* キー名 (白：一番目立たせる) */
+    
+    /* 値は少しトーンを落として、キー名と区別をつける */
+    --json-tree-string-color: #aaaaaa;    /* 文字列 (明るいグレー) */
+    --json-tree-number-color: #aaaaaa;    /* 数値 (グレー) */
+    --json-tree-boolean-color: #aaaaaa;   /* 真偽値 (グレー) */
+    --json-tree-null-color: #666666;      /* null (暗めのグレー) */
+    --json-tree-undefined-color: #666666; /* undefined */
+  }
+
+  /* 選択中の行をわずかに浮かび上がらせる */
+  :global(.json-tree-pair:hover) {
+    background-color: rgba(255, 255, 255, 0.03) !important;
+  }
 </style>

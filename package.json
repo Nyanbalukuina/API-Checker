@@ -14,5 +14,8 @@
     "@types/firefox-webext-browser": "^143.0.0",
     "svelte": "^5.48.2",
     "vite": "^7.2.4"
+  },
+  "dependencies": {
+    "svelte-json-tree": "^2.2.0"
   }
 }
