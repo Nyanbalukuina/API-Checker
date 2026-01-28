@@ -20,7 +20,7 @@
 
       // 【API判定】JSONデータ または 特定のURLパターンのみに絞り込む
       const isJson = mimeType.includes('json');
-      const isApiCall = currentUrl.includes('/api/') || currentUrl.includes('handler='); 
+      const isApiCall = currentUrl.includes('/api/') || currentUrl.includes('handler=') || currentUrl.includes('localhost'); 
       if (!isJson && !isApiCall) return;
 
       // 表示用のデータオブジェクトを作成
