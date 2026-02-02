@@ -8,20 +8,17 @@
   let cookieString = $state(""); // 表示用のクッキー文字列
 
   // --- 2. Chrome API による通信監視 ---
-  if (typeof chrome !== 'undefined' && chrome.devtools) {
-    // ネットワークリクエストが完了したときに発火
-    chrome.devtools.network.onRequestFinished.addListener((request) => {
-      const currentUrl = request.request.url;
-      const mimeType = request.response.content.mimeType || "";
+    if (typeof chrome !== 'undefined' && chrome.devtools) {
+      chrome.devtools.network.onRequestFinished.addListener((request) => {
+        const currentUrl = request.request.url;
+        const mimeType = request.response.content.mimeType || "";
 
-      // 【フィルタリング】特定の拡張子を持つ静的ファイルを除外
-      const ignoreExtensions = [".woff2", ".woff", ".ttf", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".js"];
-      if (ignoreExtensions.some(ext => currentUrl.toLowerCase().split('?')[0].endsWith(ext))) return;
+        // 【修正】JSONデータかどうかだけを判定
+        // application/json だけでなく、text/json や application/vnd.api+json などもカバー
+        const isJson = mimeType.toLowerCase().includes('json');
 
-      // 【API判定】JSONデータ または 特定のURLパターンのみに絞り込む
-      const isJson = mimeType.includes('json');
-      const isApiCall = currentUrl.includes('/api/') || currentUrl.includes('handler=') || currentUrl.includes('localhost'); 
-      if (!isJson && !isApiCall) return;
+        // JSONでなければその時点で終了（静的ファイルの判定も不要になります）
+        if (!isJson) return;
 
       // 表示用のデータオブジェクトを作成
       const newEntry = {
@@ -99,7 +96,7 @@
 <div class="api-checker-root">
   <header class="header">
     <div class="header-left">
-      <span class="title">API CHECKER</span>
+      <span class="title">J-Spy</span>
       <span class="count">{apis.length} items</span>
     </div>
     <button class="clear-btn" onclick={() => {apis = []; selected = null;}}>Clear All</button>

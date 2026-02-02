@@ -1,5 +1,6 @@
 chrome.devtools.panels.create(
-  "API Checker",
-  "",
-  "index.html"
+  "J-Spy",
+  "icons/icon16.png",
+  "index.html",
+  null
 );
