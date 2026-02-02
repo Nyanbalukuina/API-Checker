@@ -1,4 +1,8 @@
+<p align="center">
+  <img src="public/icons/icon128.png" width="128" alt="J-Spy Logo">
+</p>
 
+# J-Spy - JSON Focused API Monitor
 # 🚀 J-Spy - Chrome DevTools Extension
 
 **Modern & Lightweight API Monitoring Tool built with Svelte 5**
